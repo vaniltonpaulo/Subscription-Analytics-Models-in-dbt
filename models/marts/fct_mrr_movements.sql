@@ -16,13 +16,16 @@ classified as (
             when mrr > 0 and previous_month_mrr = 0
                 then 'reactivation'
             when mrr > previous_month_mrr
-                then 'upgrade'
-            when mrr < previous_month_mrr and mrr > 0
-                then 'downgrade'
-            else 'no_change'
+                then 'expansion'
+            when mrr < previous_month_mrr
+                then 'contraction'
+            else 'retained'
         end as change_category,
         mrr - coalesce(previous_month_mrr, 0) as mrr_change
     from customer_mrr
+    -- Months between a churn and a reactivation carry no revenue and no
+    -- movement; they only exist upstream so that lag() sees the gap.
+    where not (mrr = 0 and previous_month_mrr = 0)
 )
 
 select * from classified
