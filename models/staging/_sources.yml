@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: subscription_analytics
+    schema: "{{ target.schema }}"
+    tables:
+      - name: raw_subscriptions
+        description: Seeded raw subscription data
