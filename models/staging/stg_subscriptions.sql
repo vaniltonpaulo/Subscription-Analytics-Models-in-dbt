@@ -1,5 +1,5 @@
 with source as (
-    select * from {{ source('subscription_analytics', 'raw_subscriptions') }}
+    select * from {{ ref('raw_subscriptions') }}
 ),
 
 cleaned as (

@@ -1,9 +1,3 @@
-{{
-    config(
-        materialized='table'
-    )
-}}
-
 with spine as (
     {{
         dbt_utils.date_spine(

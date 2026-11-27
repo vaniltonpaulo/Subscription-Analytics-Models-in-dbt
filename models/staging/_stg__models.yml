@@ -2,20 +2,35 @@ version: 2
 
 models:
   - name: stg_subscriptions
-    description: Cleaned subscription records with invalid rows filtered out
+    description: >
+      Cleaned subscription records, one row per subscription. Rows with a
+      negative MRR or an end_date before the start_date are dropped.
     columns:
       - name: subscription_id
-        description: Unique subscription identifier
-        tests:
+        description: Unique subscription identifier.
+        data_tests:
           - unique
           - not_null
       - name: customer_id
-        tests:
+        description: Customer that owns the subscription.
+        data_tests:
           - not_null
       - name: plan_name
-        tests:
+        description: Plan the subscription is on.
+        data_tests:
           - accepted_values:
-              values: ['starter', 'professional', 'enterprise']
+              arguments:
+                values: ['starter', 'professional', 'enterprise']
       - name: mrr_amount
-        tests:
+        description: Monthly recurring revenue of the subscription, in USD.
+        data_tests:
           - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: start_date
+        description: First day the subscription is active.
+        data_tests:
+          - not_null
+      - name: end_date
+        description: Last day the subscription is active. Null while still active.

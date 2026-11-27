@@ -1,9 +1,3 @@
-{{
-    config(
-        materialized='table'
-    )
-}}
-
 with movements as (
     select * from {{ ref('fct_mrr_movements') }}
 ),

@@ -1,9 +1,3 @@
-{{
-    config(
-        materialized='table'
-    )
-}}
-
 with subscription_months as (
     select * from {{ ref('int_subscription_months') }}
 ),

@@ -1,9 +1,3 @@
-{{
-    config(
-        materialized='table'
-    )
-}}
-
 with customer_mrr as (
     select * from {{ ref('int_customer_monthly_mrr') }}
 ),
