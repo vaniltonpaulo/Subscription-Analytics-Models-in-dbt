@@ -32,3 +32,12 @@ models:
         tests:
           - unique
           - not_null
+  - name: fct_retention_cohorts
+    description: >
+      Retention cohort model showing logo retention and NRR/GRR by customer
+      signup cohort. Grain: cohort_month x months_since_signup.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - cohort_month
+            - months_since_signup
