@@ -27,13 +27,98 @@ models:
 
   - name: fct_mrr_summary
     description: >
-      Monthly MRR waterfall summary showing starting MRR, movements by type,
-      and ending MRR with customer counts. One row per month.
+      Monthly MRR waterfall and SaaS health metrics, one row per month of the
+      date spine. Movements are signed (contraction and churn are negative),
+      so starting_mrr + net_new_mrr = ending_mrr, and each month's
+      starting_mrr equals the previous month's ending_mrr.
     columns:
       - name: date_month
-        tests:
+        description: First day of the month.
+        data_tests:
           - unique
           - not_null
+      - name: starting_mrr
+        description: MRR at the start of the month (= previous month's ending MRR).
+      - name: new_mrr
+        description: MRR from customers in their first paying month.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: reactivation_mrr
+        description: MRR from previously churned customers who came back.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: expansion_mrr
+        description: MRR gained from existing customers paying more.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: contraction_mrr
+        description: MRR lost from existing customers paying less (negative).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                max_value: 0
+      - name: churned_mrr
+        description: MRR lost from customers who left (negative).
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                max_value: 0
+      - name: net_new_mrr
+        description: Sum of all movements in the month.
+      - name: ending_mrr
+        description: MRR at the end of the month.
+      - name: ending_arr
+        description: Annual run rate, ending_mrr x 12.
+      - name: starting_customers
+        description: Customers paying at the start of the month.
+      - name: new_customers
+        description: Customers in their first paying month.
+      - name: reactivated_customers
+        description: Previously churned customers paying again.
+      - name: churned_customers
+        description: Customers who stopped paying this month.
+      - name: ending_customers
+        description: Customers paying at the end of the month.
+      - name: arpa
+        description: Average revenue per account, ending_mrr / ending_customers.
+      - name: mrr_growth_rate
+        description: Month-over-month MRR growth, net_new_mrr / starting_mrr.
+      - name: customer_churn_rate
+        description: Logo churn, churned_customers / starting_customers.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: gross_mrr_churn_rate
+        description: >
+          Share of starting MRR lost to contraction and churn,
+          -(contraction_mrr + churned_mrr) / starting_mrr.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: net_mrr_retention
+        description: >
+          Monthly net revenue retention: MRR kept from starting customers
+          including expansion, (starting + expansion + contraction + churn) / starting.
+          Above 1 means existing customers grew.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: quick_ratio
+        description: >
+          SaaS quick ratio, (new + reactivation + expansion) / |contraction + churn|.
+          Above 1 means the business adds MRR faster than it loses it.
+
   - name: fct_retention_cohorts
     description: >
       Retention cohort model showing logo retention and NRR/GRR by customer
@@ -67,3 +152,30 @@ unit_tests:
         - {customer_id: c1, date_month: 2024-04-01, change_category: contraction, mrr_change: "-50.00"}
         - {customer_id: c1, date_month: 2024-05-01, change_category: churn, mrr_change: "-29.00"}
         - {customer_id: c1, date_month: 2024-07-01, change_category: reactivation, mrr_change: "199.00"}
+
+  - name: test_mrr_summary_waterfall_and_rates
+    description: >
+      Movements are signed, starting MRR comes from the prior month, rates are
+      computed against starting values, and rates are null when the month
+      starts from zero.
+    model: fct_mrr_summary
+    given:
+      - input: ref('int_date_spine')
+        rows:
+          - {date_month: 2024-01-01}
+          - {date_month: 2024-02-01}
+      - input: ref('fct_mrr_movements')
+        rows:
+          # January: two new customers
+          - {customer_id: a, date_month: 2024-01-01, mrr: 100, previous_month_mrr: null, change_category: new, mrr_change: 100}
+          - {customer_id: b, date_month: 2024-01-01, mrr: 100, previous_month_mrr: null, change_category: new, mrr_change: 100}
+          # February: a expands, b churns, c is new
+          - {customer_id: a, date_month: 2024-02-01, mrr: 150, previous_month_mrr: 100, change_category: expansion, mrr_change: 50}
+          - {customer_id: b, date_month: 2024-02-01, mrr: 0, previous_month_mrr: 100, change_category: churn, mrr_change: -100}
+          - {customer_id: c, date_month: 2024-02-01, mrr: 30, previous_month_mrr: null, change_category: new, mrr_change: 30}
+    expect:
+      format: csv
+      rows: |
+        date_month,starting_mrr,new_mrr,expansion_mrr,churned_mrr,net_new_mrr,ending_mrr,starting_customers,churned_customers,ending_customers,arpa,customer_churn_rate,gross_mrr_churn_rate,net_mrr_retention,quick_ratio
+        2024-01-01,0.00,200.00,0.00,0.00,200.00,200.00,0,0,2,100.00,,,,
+        2024-02-01,200.00,30.00,50.00,-100.00,-20.00,180.00,2,1,2,90.00,0.5000,0.5000,0.7500,0.80
