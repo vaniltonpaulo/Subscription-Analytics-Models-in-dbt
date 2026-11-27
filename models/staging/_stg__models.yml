@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_subscriptions
+    description: Cleaned subscription records with invalid rows filtered out
+    columns:
+      - name: subscription_id
+        description: Unique subscription identifier
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+      - name: plan_name
+        tests:
+          - accepted_values:
+              values: ['starter', 'professional', 'enterprise']
+      - name: mrr_amount
+        tests:
+          - not_null
