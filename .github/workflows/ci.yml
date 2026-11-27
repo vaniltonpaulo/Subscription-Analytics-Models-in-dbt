@@ -1,0 +1,81 @@
+name: dbt CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to the same branch cancels the run that is still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dbt-build:
+    name: dbt build (Postgres 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dbt
+          POSTGRES_PASSWORD: dbt
+          POSTGRES_DB: subscription_analytics
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DBT_PROFILES_DIR: ${{ github.workspace }}/ci
+      DBT_HOST: localhost
+      DBT_PORT: 5432
+      DBT_USER: dbt
+      DBT_PASSWORD: dbt
+      DBT_DBNAME: subscription_analytics
+      DBT_SCHEMA: dbt_ci
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dbt
+        run: pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: dbt deps
+
+      - name: Check connection
+        run: dbt debug
+
+      # Seeds, models, data tests and unit tests, in dependency order,
+      # on an empty database: proves the project builds from scratch.
+      - name: Build and test
+        run: dbt build
+
+      - name: Generate docs
+        run: dbt docs generate
+
+      - name: Upload dbt artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts
+          path: |
+            target/manifest.json
+            target/run_results.json
+            target/catalog.json
+            logs/dbt.log
+          if-no-files-found: ignore

@@ -1,0 +1,14 @@
+# Connection profile used by CI. All values come from environment variables,
+# so no credentials are committed. Local development uses ~/.dbt/profiles.yml.
+subscription_analytics_project:
+  target: ci
+  outputs:
+    ci:
+      type: postgres
+      host: "{{ env_var('DBT_HOST') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | int }}"
+      user: "{{ env_var('DBT_USER') }}"
+      pass: "{{ env_var('DBT_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_DBNAME') }}"
+      schema: "{{ env_var('DBT_SCHEMA', 'dbt_ci') }}"
+      threads: 4
