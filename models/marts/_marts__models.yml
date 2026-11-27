@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: fct_mrr_movements
+    description: >
+      One row per customer per month with MRR and the change category
+      describing the revenue movement relative to the previous month.
+      Grain: customer_id x date_month.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+      - name: date_month
+        tests:
+          - not_null
+      - name: change_category
+        tests:
+          - accepted_values:
+              values: ['new', 'churn', 'reactivation', 'upgrade', 'downgrade', 'no_change']
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - customer_id
+            - date_month
+
+  - name: fct_mrr_summary
+    description: >
+      Monthly MRR waterfall summary showing starting MRR, movements by type,
+      and ending MRR with customer counts. One row per month.
+    columns:
+      - name: date_month
+        tests:
+          - unique
+          - not_null
