@@ -1,0 +1,107 @@
+version: 2
+
+models:
+  - name: int_date_spine
+    description: >
+      One row per month from the month of the earliest subscription through
+      the month containing the reporting date (`mrr_as_of_date` var, default
+      today).
+    columns:
+      - name: date_month
+        description: First day of the month.
+        data_tests:
+          - unique
+          - not_null
+
+  - name: int_subscription_months
+    description: >
+      One row per subscription per month in which the subscription was active
+      on at least one day. A subscription contributes its full MRR to every
+      such month (no proration).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - subscription_id
+              - date_month
+    columns:
+      - name: subscription_id
+        description: Subscription identifier.
+      - name: customer_id
+        description: Customer that owns the subscription.
+      - name: plan_name
+        description: Plan the subscription is on.
+      - name: mrr_amount
+        description: MRR the subscription contributes in this month.
+      - name: date_month
+        description: First day of the month.
+
+  - name: int_customer_monthly_mrr
+    description: >
+      One row per customer per month, from the customer's first active month
+      through the month after their last active month (the churn month), or
+      through the end of the date spine if still active. Months with no active
+      subscription in between are filled with zero MRR so that month-over-month
+      comparisons see the gap.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - customer_id
+              - date_month
+    columns:
+      - name: customer_id
+        description: Customer identifier.
+      - name: date_month
+        description: First day of the month.
+      - name: mrr
+        description: Total MRR across the customer's active subscriptions this month.
+        data_tests:
+          - not_null
+      - name: previous_month_mrr
+        description: The customer's MRR in the previous month. Null in their first month.
+
+unit_tests:
+  - name: test_customer_monthly_mrr_records_churn_month_and_gaps
+    description: >
+      A customer who leaves for good gets exactly one zero-MRR row (the churn
+      month); a customer who leaves and returns gets zero-MRR rows for the gap;
+      a customer still active at the end of the spine gets no extra row;
+      overlapping subscriptions are summed.
+    model: int_customer_monthly_mrr
+    given:
+      - input: ref('int_date_spine')
+        rows:
+          - {date_month: 2024-01-01}
+          - {date_month: 2024-02-01}
+          - {date_month: 2024-03-01}
+          - {date_month: 2024-04-01}
+          - {date_month: 2024-05-01}
+          - {date_month: 2024-06-01}
+      - input: ref('int_subscription_months')
+        rows:
+          # churned for good after February
+          - {subscription_id: s1, customer_id: churned, mrr_amount: 29, date_month: 2024-01-01}
+          - {subscription_id: s1, customer_id: churned, mrr_amount: 29, date_month: 2024-02-01}
+          # active in January, gone February-March, back in April
+          - {subscription_id: s2, customer_id: returned, mrr_amount: 79, date_month: 2024-01-01}
+          - {subscription_id: s3, customer_id: returned, mrr_amount: 79, date_month: 2024-04-01}
+          - {subscription_id: s3, customer_id: returned, mrr_amount: 79, date_month: 2024-05-01}
+          - {subscription_id: s3, customer_id: returned, mrr_amount: 79, date_month: 2024-06-01}
+          # still active in the last month of the spine, second subscription from June
+          - {subscription_id: s4, customer_id: active, mrr_amount: 199, date_month: 2024-05-01}
+          - {subscription_id: s4, customer_id: active, mrr_amount: 199, date_month: 2024-06-01}
+          - {subscription_id: s5, customer_id: active, mrr_amount: 50, date_month: 2024-06-01}
+    expect:
+      rows:
+        - {customer_id: churned, date_month: 2024-01-01, mrr: "29.00", previous_month_mrr: null}
+        - {customer_id: churned, date_month: 2024-02-01, mrr: "29.00", previous_month_mrr: "29.00"}
+        - {customer_id: churned, date_month: 2024-03-01, mrr: "0.00", previous_month_mrr: "29.00"}
+        - {customer_id: returned, date_month: 2024-01-01, mrr: "79.00", previous_month_mrr: null}
+        - {customer_id: returned, date_month: 2024-02-01, mrr: "0.00", previous_month_mrr: "79.00"}
+        - {customer_id: returned, date_month: 2024-03-01, mrr: "0.00", previous_month_mrr: "0.00"}
+        - {customer_id: returned, date_month: 2024-04-01, mrr: "79.00", previous_month_mrr: "0.00"}
+        - {customer_id: returned, date_month: 2024-05-01, mrr: "79.00", previous_month_mrr: "79.00"}
+        - {customer_id: returned, date_month: 2024-06-01, mrr: "79.00", previous_month_mrr: "79.00"}
+        - {customer_id: active, date_month: 2024-05-01, mrr: "199.00", previous_month_mrr: null}
+        - {customer_id: active, date_month: 2024-06-01, mrr: "249.00", previous_month_mrr: "199.00"}

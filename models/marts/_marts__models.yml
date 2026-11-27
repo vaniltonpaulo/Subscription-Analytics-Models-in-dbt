@@ -3,9 +3,10 @@ version: 2
 models:
   - name: fct_mrr_movements
     description: >
-      One row per customer per month with MRR and the change category
-      describing the revenue movement relative to the previous month.
-      Grain: customer_id x date_month.
+      One row per customer per month in which the customer either had MRR or
+      churned, with the change category describing the revenue movement
+      relative to the previous month. Dormant months between a churn and a
+      reactivation are excluded. Grain: customer_id x date_month.
     columns:
       - name: customer_id
         tests:
@@ -14,9 +15,10 @@ models:
         tests:
           - not_null
       - name: change_category
-        tests:
+        data_tests:
           - accepted_values:
-              values: ['new', 'churn', 'reactivation', 'upgrade', 'downgrade', 'no_change']
+              arguments:
+                values: ['new', 'expansion', 'contraction', 'churn', 'reactivation', 'retained']
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns:
@@ -41,3 +43,27 @@ models:
           combination_of_columns:
             - cohort_month
             - months_since_signup
+unit_tests:
+  - name: test_mrr_movements_classifies_every_category
+    description: >
+      Each month-over-month change maps to exactly one category, and dormant
+      months (zero MRR after zero MRR) are dropped.
+    model: fct_mrr_movements
+    given:
+      - input: ref('int_customer_monthly_mrr')
+        rows:
+          - {customer_id: c1, date_month: 2024-01-01, mrr: 29, previous_month_mrr: null}
+          - {customer_id: c1, date_month: 2024-02-01, mrr: 29, previous_month_mrr: 29}
+          - {customer_id: c1, date_month: 2024-03-01, mrr: 79, previous_month_mrr: 29}
+          - {customer_id: c1, date_month: 2024-04-01, mrr: 29, previous_month_mrr: 79}
+          - {customer_id: c1, date_month: 2024-05-01, mrr: 0, previous_month_mrr: 29}
+          - {customer_id: c1, date_month: 2024-06-01, mrr: 0, previous_month_mrr: 0}
+          - {customer_id: c1, date_month: 2024-07-01, mrr: 199, previous_month_mrr: 0}
+    expect:
+      rows:
+        - {customer_id: c1, date_month: 2024-01-01, change_category: new, mrr_change: "29.00"}
+        - {customer_id: c1, date_month: 2024-02-01, change_category: retained, mrr_change: "0.00"}
+        - {customer_id: c1, date_month: 2024-03-01, change_category: expansion, mrr_change: "50.00"}
+        - {customer_id: c1, date_month: 2024-04-01, change_category: contraction, mrr_change: "-50.00"}
+        - {customer_id: c1, date_month: 2024-05-01, change_category: churn, mrr_change: "-29.00"}
+        - {customer_id: c1, date_month: 2024-07-01, change_category: reactivation, mrr_change: "199.00"}
